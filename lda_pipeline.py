@@ -11,13 +11,14 @@ import unicodedata
 
 
 # define component pieces here to avoid re-downloading
-# the pretrained components every time
+# the pretrained components every time.
 # (TODO: figure how to cache downloaded models (...with Python?))
 
 assembler = DocumentAssembler()
 
-tokenizer = Tokenizer()
 
+tokenizer = Tokenizer()
+# add ['‘', '’', '“', '”'] as context characters
 char_names = ['LEFT SINGLE QUOTATION MARK',
               'RIGHT SINGLE QUOTATION MARK',
               'LEFT DOUBLE QUOTATION MARK',
@@ -30,7 +31,8 @@ stopwords_cleaner = (
     StopWordsCleaner.pretrained("stopwords_en", "en")
     .setCaseSensitive(False)
 )
-
+# for each stopword involving an apostrophe ('), append
+# a version of the stopword using the character (’) instead.
 char = unicodedata.lookup('APOSTROPHE')
 replacement = unicodedata.lookup('RIGHT SINGLE QUOTATION MARK')
 stopwords = stopwords_cleaner.getStopWords()
@@ -43,6 +45,7 @@ stopwords_cleaner.setStopWords(stopwords)
 
 lemmatizer = LemmatizerModel.pretrained()
 
+
 normalizer = (
     Normalizer()
     .setLowercase(True)
@@ -50,10 +53,12 @@ normalizer = (
                          'http.*'])
 )
 
+
 finisher = Finisher()
 
 
 def build_pipeline():
+    # assmble the pipeline
     (assembler
      .setInputCol('text')
      .setOutputCol('document'))
