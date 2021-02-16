@@ -3,79 +3,80 @@ from sparknlp.annotator import (Tokenizer,
                                 Normalizer,
                                 LemmatizerModel,
                                 StopWordsCleaner,
-                                NGramGenerator,
-                                PerceptronModel)
+                                # NGramGenerator,
+                                # PerceptronModel
+                                )
 from pyspark.ml import Pipeline
+import unicodedata
 
-# from spacy.lang.en.stop_words import STOP_WORDS
-# STOP_WORDS = list(STOP_WORDS)
-# print(STOP_WORDS)
+
+# define component pieces here to avoid re-downloading
+# the pretrained components every time
+# (TODO: figure how to cache downloaded models (...with Python?))
+
+assembler = DocumentAssembler()
+
+tokenizer = Tokenizer()
+
+char_names = ['LEFT SINGLE QUOTATION MARK',
+              'RIGHT SINGLE QUOTATION MARK',
+              'LEFT DOUBLE QUOTATION MARK',
+              'RIGHT DOUBLE QUOTATION MARK']
+for name in char_names:
+    tokenizer.addContextChars(unicodedata.lookup(name))
+
+
+stopwords_cleaner = (
+    StopWordsCleaner.pretrained("stopwords_en", "en")
+    .setCaseSensitive(False)
+)
+
+char = unicodedata.lookup('APOSTROPHE')
+replacement = unicodedata.lookup('RIGHT SINGLE QUOTATION MARK')
+stopwords = stopwords_cleaner.getStopWords()
+for s in stopwords_cleaner.getStopWords():
+    if char in s:
+        stopwords.append(s.replace(char, replacement))
+stopwords.sort()
+stopwords_cleaner.setStopWords(stopwords)
+
+
+lemmatizer = LemmatizerModel.pretrained()
+
+normalizer = (
+    Normalizer()
+    .setLowercase(True)
+    .setCleanupPatterns(['[^0-9A-Za-z$&%]',
+                         'http.*'])
+)
+
+finisher = Finisher()
 
 
 def build_pipeline():
-    assembler = (
-        DocumentAssembler()
-        .setInputCol('text')
-        .setOutputCol('document')
-    )
+    (assembler
+     .setInputCol('text')
+     .setOutputCol('document'))
 
-    tokenizer = (
-        Tokenizer()
-        .setInputCols(['document'])
-        .setOutputCol('tokenized')
-    )
+    (tokenizer
+     .setInputCols(['document'])
+     .setOutputCol('tokenized'))
 
-    stopwords_cleaner = (
-        StopWordsCleaner.pretrained("stopwords_en", "en")
-        .setInputCols(['tokenized'])
-        .setOutputCol('cleaned')
-        .setCaseSensitive(False)
-    )
+    (stopwords_cleaner
+     .setInputCols(['tokenized'])
+     .setOutputCol('cleaned')
+     .setCaseSensitive(False))
 
-    # stopwords_cleaner = (
-    #     StopWordsCleaner()
-    #     .setInputCols(['tokenized'])
-    #     .setOutputCol('cleaned')
-    #     .setStopWords(STOP_WORDS)
-    #     .setCaseSensitive(False)
-    # )
+    (lemmatizer
+     .setInputCols(['cleaned'])
+     .setOutputCol('lemmatized'))
 
-    lemmatizer = (
-        LemmatizerModel.pretrained()
-        .setInputCols(['cleaned'])
-        .setOutputCol('lemmatized')
-    )
+    (normalizer
+     .setInputCols(['lemmatized'])
+     .setOutputCol('normalized'))
 
-    normalizer = (
-        Normalizer()
-        .setInputCols(['lemmatized'])
-        .setOutputCol('normalized')
-        .setLowercase(True)
-        .setCleanupPatterns(['[^A-Za-z]',
-                             'http.*'])
-    )
-
-    # ngrammer = (
-    #     NGramGenerator()
-    #     .setInputCols([''])
-    #     .setOutputCol('ngrams')
-    #     .setN(3)
-    #     .setEnableCumulative(True)
-    #     .setDelimiter('_')
-    # )
-
-    # pos_tagger = (
-    #     PerceptronModel.pretrained('pos_anc')
-    #     .setInputCols(['document', 'lemmatized'])
-    #     .setOutputCol('pos')
-    # )
-
-    finisher = (
-        Finisher()
-        .setInputCols(['normalized',
-                       # 'pos'
-                       ])
-    )
+    (finisher
+     .setInputCols(['normalized']))
 
     pipeline = (Pipeline()
                 .setStages([assembler,
@@ -83,8 +84,6 @@ def build_pipeline():
                             stopwords_cleaner,
                             lemmatizer,
                             normalizer,
-                            # pos_tagger,
-                            # ngrammer,
                             finisher]))
 
     # to do: try LightPipeline as in
