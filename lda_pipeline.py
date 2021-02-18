@@ -10,8 +10,6 @@ from pyspark.ml import Pipeline
 import unicodedata
 
 
-# define component pieces here to avoid re-downloading
-# the pretrained components every time.
 # (TODO: figure how to cache downloaded models (...with Python?))
 
 assembler = DocumentAssembler()
@@ -33,13 +31,16 @@ stopwords_cleaner = (
     .setCaseSensitive(False)
 )
 # for each stopword involving an apostrophe ('), append
-# a version of the stopword using the character (’) instead.
+# a version of the stopword using the character (’) instead,
+# and a version with the apostrophe missing
 char = unicodedata.lookup('APOSTROPHE')
 replacement = unicodedata.lookup('RIGHT SINGLE QUOTATION MARK')
 stopwords = stopwords_cleaner.getStopWords()
 for s in stopwords_cleaner.getStopWords():
     if char in s:
         stopwords.append(s.replace(char, replacement))
+        stopwords.append(s.replace(char, ""))
+stopwords.append("yall")
 stopwords.sort()
 stopwords_cleaner.setStopWords(stopwords)
 
