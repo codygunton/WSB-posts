@@ -14,17 +14,20 @@ from download_pretrained import PretrainedCacheManager
 
 
 def get_pipeline_components():
+    # get acche manager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
-
     # this is a dict with entries as in
     # ('lemmatizer', path-to-downloaded-unzipped-lemmatizer)
     pretrained_components = cache_manager.pretrained_components
 
+    # get document assembler
     assembler = DocumentAssembler()
 
+    # get sentence detector
     sentence_detector = SentenceDetector()
 
+    # build tokenizer
     tokenizer = Tokenizer()
     # add ['‘', '’', '“', '”'] as context characters
     # doing this in a verbose way because it may be clarifying.
@@ -34,7 +37,11 @@ def get_pipeline_components():
                   'RIGHT DOUBLE QUOTATION MARK']
     for name in char_names:
         tokenizer.addContextChars(unicodedata.lookup(name))
+    # now set exceptions to get context around the words "sell" and "hold"
+    tokenizer.setExceptions(["\S+ sell", "\S+ hold"])
+    tokenizer.setCaseSensitiveExceptions(True)
 
+    # built stopwords cleaner
     stopwords_cleaner = (
         StopWordsCleaner()
         .load(pretrained_components["stopwords"])
@@ -54,10 +61,12 @@ def get_pipeline_components():
     stopwords.sort()
     stopwords_cleaner.setStopWords(stopwords)
 
+    # build lemmatizer
     lemmatizer = (
         LemmatizerModel().load(pretrained_components["lemmatizer"])
     )
 
+    # build normalizer
     normalizer = (
         Normalizer()
         .setLowercase(True)
@@ -87,17 +96,26 @@ def get_pipeline_components():
     normalizer.setCleanupPatterns([keeper_regex,
                                    'http.*'])
 
+    # build finisher
     finisher = Finisher()
 
     return (assembler, sentence_detector, tokenizer, stopwords_cleaner,
             lemmatizer, normalizer, finisher)
 
 
-def build_pipeline():
+def build_pipeline(pipeline_components=None):
     # get_pipeline_components
-    _ = get_pipeline_components()
-    (assembler, sentence_detector, tokenizer,
-     stopwords_cleaner, lemmatizer, normalizer, finisher) = _
+    if not pipeline_components:
+        _ = get_pipeline_components()
+    else:
+        _ = pipeline_components
+    (assembler,
+     sentence_detector,
+     tokenizer,
+     stopwords_cleaner,
+     lemmatizer,
+     normalizer,
+     finisher) = _
 
     # assemble the pipeline
     (assembler
