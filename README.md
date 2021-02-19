@@ -4,8 +4,9 @@
 
 Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/reddit-wallstreetsbets-post).
 
-Currently: writing a fast Spark pipeline that correctly handles the Reddit posts.
 
-Next up: topic modeling in Spark NLP.
+✔: Fast SparkNLP pipeline producing Bag of Words + Bag of Emojis. [notebook iullstration here](./notebooks/bowbae_pipeline.ipynb).
 
-After that: clustering, summarization, and mapping this onto the topic model?
+Next: Topic modeling and other clustering.
+
+

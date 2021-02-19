@@ -1,5 +1,6 @@
 from sparknlp.base import DocumentAssembler, Finisher
-from sparknlp.annotator import (Tokenizer,
+from sparknlp.annotator import (RegexMatcher,
+                                Tokenizer,
                                 SentenceDetector,
                                 Normalizer,
                                 LemmatizerModel,
@@ -13,6 +14,8 @@ import unicodedata
 from download_pretrained import PretrainedCacheManager
 
 emoji_ranges = [
+        # special characters for Becky
+        '\u200d\u2640\u2641\u26A5\ufe0f',
         # ranges covering all emojis expressible
         # using only one unicode character.
         '\U0001f300-\U0001f321',
@@ -31,7 +34,17 @@ emoji_ranges = [
 ]
 
 
-def get_unigram_pipeline_components():
+def write_emoji_matcher_rules():
+    # generate matcher rules
+    emojis = ''.join(emoji_ranges)
+    # regex = f"[{emojis}|{emojis}\s+]+"
+    regex = f"[{emojis}]"
+    matcher_rule = regex+"~emojis"
+    with open("emoji_matcher_rules.csv", "w") as fobj:
+        fobj.writelines([matcher_rule])
+
+
+def get_components():
     # get acche manager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
@@ -41,6 +54,12 @@ def get_unigram_pipeline_components():
 
     # get document assembler
     assembler = DocumentAssembler()
+
+    # get matcher
+    write_emoji_matcher_rules()
+    emoji_matcher = RegexMatcher()
+    emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
+                                   delimiter="~")
 
     # get sentence detector
     sentence_detector = SentenceDetector()
@@ -63,9 +82,8 @@ def get_unigram_pipeline_components():
     #    so we can normalize later
     tokenizer.setExceptions(["\S+ sell",
                              "\S+ hold",
+                             "\S+ buy",
                              "game [stop|stonk]",
-                             "\U0001f680\s+", # rocket ship
-                             "\U0001f48e\U0001f64c\s+"
                             ])
     tokenizer.setCaseSensitiveExceptions(True)
 
@@ -106,9 +124,6 @@ def get_unigram_pipeline_components():
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join([
         '[^0-9A-Za-z$&%=',
-        # special characters for Becky
-        '\u200d\u2640\u2641\u26A5\ufe0f',
-        ''.join(emoji_ranges),
         ']'
     ])
     normalizer.setCleanupPatterns([keeper_regex,
@@ -117,21 +132,24 @@ def get_unigram_pipeline_components():
     # build finisher
     finisher = Finisher()
 
-    return (assembler, sentence_detector, tokenizer,
-            stopwords_cleaner, lemmatizer, normalizer, finisher)
+    return (assembler,
+            emoji_matcher,
+            sentence_detector,
+            tokenizer,
+            stopwords_cleaner,
+            lemmatizer, normalizer,
+            finisher)
 
 
-def get_Ngram_pipeline_components(N=2):
-    return
-
-
-def build_unigram_pipeline(pipeline_components=None):
+# bag of words bag of emojis pipeline
+def build_bowbae_pipeline(pipeline_components=None):
     # get_pipeline_components
     if not pipeline_components:
-        _ = get_unigram_pipeline_components()
+        _ = get_components()
     else:
         _ = pipeline_components
     (assembler,
+     emoji_matcher,
      sentence_detector,
      tokenizer,
      stopwords_cleaner,
@@ -143,6 +161,10 @@ def build_unigram_pipeline(pipeline_components=None):
     (assembler
      .setInputCol('text')
      .setOutputCol('document'))
+
+    (emoji_matcher
+     .setInputCols(["document"])
+     .setOutputCol("emojis"))
 
     (sentence_detector
      .setInputCols(['document'])
@@ -165,10 +187,11 @@ def build_unigram_pipeline(pipeline_components=None):
      .setOutputCol('unigrams'))
 
     (finisher
-     .setInputCols(['unigrams']))
+     .setInputCols(['unigrams', 'emojis']))
 
     pipeline = (Pipeline()
                 .setStages([assembler,
+                            emoji_matcher,
                             sentence_detector,
                             tokenizer,
                             stopwords_cleaner,
