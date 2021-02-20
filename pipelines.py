@@ -45,15 +45,16 @@ def write_emoji_matcher_rules():
 
 
 def get_components():
-    # get acche manager to avoid repeated downloads
+    # get cache mananager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
     # this is a dict with entries as in
     # ('lemmatizer', path-to-downloaded-unzipped-lemmatizer)
     pretrained_components = cache_manager.pretrained_components
 
-    # get document assembler
+    # get document assemblers
     assembler = DocumentAssembler()
+    assembler_no_emojis = DocumentAssembler()
 
     # get matcher
     write_emoji_matcher_rules()
@@ -123,7 +124,7 @@ def get_components():
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join([
-        '[^0-9A-Za-z$&%=',
+        '[^0-9A-Za-z$&%=Ⓔ',
         ']'
     ])
     normalizer.setCleanupPatterns([keeper_regex,
@@ -133,6 +134,7 @@ def get_components():
     finisher = Finisher()
 
     return (assembler,
+            assembler_no_emojis,
             emoji_matcher,
             sentence_detector,
             tokenizer,
@@ -149,6 +151,7 @@ def build_bowbae_pipeline(pipeline_components=None):
     else:
         _ = pipeline_components
     (assembler,
+     assembler_no_emojis,
      emoji_matcher,
      sentence_detector,
      tokenizer,
@@ -160,11 +163,15 @@ def build_bowbae_pipeline(pipeline_components=None):
     # assemble the pipeline
     (assembler
      .setInputCol('text')
-     .setOutputCol('document'))
+     .setOutputCol('document_emojis'))
 
     (emoji_matcher
-     .setInputCols(["document"])
+     .setInputCols(["document_emojis"])
      .setOutputCol("emojis"))
+
+    (assembler_no_emojis
+     .setInputCol('text_no_emojis')
+     .setOutputCol('document'))
 
     (sentence_detector
      .setInputCols(['document'])
@@ -192,6 +199,7 @@ def build_bowbae_pipeline(pipeline_components=None):
     pipeline = (Pipeline()
                 .setStages([assembler,
                             emoji_matcher,
+                            assembler_no_emojis,
                             sentence_detector,
                             tokenizer,
                             stopwords_cleaner,
