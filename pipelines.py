@@ -1,13 +1,19 @@
-from sparknlp.base import DocumentAssembler, Finisher
-from sparknlp.annotator import (RegexMatcher,
-                                Tokenizer,
-                                SentenceDetector,
-                                Normalizer,
-                                LemmatizerModel,
-                                StopWordsCleaner,
-                                # NGramGenerator,
-                                # PerceptronModel
-                                )
+from sparknlp.base import (DocumentAssembler,
+                           Finisher)
+# from sparknlp.annotator import (RegexMatcher,
+#                                 Tokenizer,
+#                                 SentenceDetector,
+#                                 SentenceDetectorDLApproach,
+#                                 Normalizer,
+#                                 DocumentNormalizer,
+#                                 LemmatizerModel,
+#                                 StopWordsCleaner,
+#                                 NorvigSweetingModel,
+#                                 UniversalSentenceEncoder,
+#                                 NGramGenerator,
+#                                 # PerceptronModel
+#                                 )
+from sparknlp.annotator import *
 from pyspark.ml import Pipeline
 import unicodedata
 
@@ -44,7 +50,7 @@ def write_emoji_matcher_rules():
         fobj.writelines([matcher_rule])
 
 
-def get_components():
+def get_bowbae_components():
     # get cache mananager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
@@ -62,6 +68,24 @@ def get_components():
     emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
                                    delimiter="~")
 
+
+      # build normalizer
+    document_normalizer = (
+        DocumentNormalizer()
+        .setLowercase(True)
+    )
+    # this does not keep all emojis, but it keeps a lot of them.
+    # for instance, it does not distinguish skin color, but it has
+    # enough characters to express the Becky emoji.
+    keeper_regex = ''.join([
+        '[^0-9A-Za-z$&%\.,?!\'‘’\"“”',
+#         ''.join(emoji_ranges),
+        ']' 
+    ])
+    document_normalizer.setPatterns([keeper_regex,
+                                     'http.*',])    
+
+    
     # get sentence detector
     sentence_detector = SentenceDetector()
 
@@ -124,22 +148,52 @@ def get_components():
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join([
-        '[^0-9A-Za-z$&%=Ⓔ',
+        '[^0-9A-Za-z$&%=',
         ']'
     ])
-    normalizer.setCleanupPatterns([keeper_regex,
+    normalizer.setCleanupPatterns([keeper_regex, "\'\"",
                                    'http.*'])
+#     # decided to scrap:
+#     # Norvig-Sweeting takes "January" to "manuary"
+#     # Context-Aware DL model takes "Gamestop" to "Jameson".
+#     spell_checker = (
+#         NorvigSweetingModel()
+# #         .pretrained()
+#         .load(pretrained_components["spell_checker"])
+#     )
 
+    ngrammer = (
+        NGramGenerator()
+        .setN(2)
+        .setDelimiter("_")
+    )
+    
+    pos_tagger = (
+        PerceptronModel()
+        .load(pretrained_components["pos_tagger"])
+    )
+    
+    chunker = (
+        Chunker()
+        .setRegexParsers(['<JJ>+<NN>', '<NN>+<NN>'])
+    )
+    
     # build finisher
     finisher = Finisher()
 
     return (assembler,
             assembler_no_emojis,
             emoji_matcher,
+            document_normalizer,
             sentence_detector,
             tokenizer,
             stopwords_cleaner,
-            lemmatizer, normalizer,
+            lemmatizer, 
+            normalizer,
+#             spell_checker,
+            ngrammer,
+            pos_tagger,
+            chunker,
             finisher)
 
 
@@ -147,17 +201,22 @@ def get_components():
 def build_bowbae_pipeline(pipeline_components=None):
     # get_pipeline_components
     if not pipeline_components:
-        _ = get_components()
+        _ = get_bowbae_components()
     else:
         _ = pipeline_components
     (assembler,
      assembler_no_emojis,
      emoji_matcher,
+     document_normalizer,
      sentence_detector,
      tokenizer,
      stopwords_cleaner,
      lemmatizer,
      normalizer,
+#      spell_checker,
+     ngrammer,
+     pos_tagger,
+     chunker,
      finisher) = _
 
     # assemble the pipeline
@@ -168,13 +227,18 @@ def build_bowbae_pipeline(pipeline_components=None):
     (emoji_matcher
      .setInputCols(["document_emojis"])
      .setOutputCol("emojis"))
-
+    
     (assembler_no_emojis
      .setInputCol('text_no_emojis')
      .setOutputCol('document'))
+    
+    (document_normalizer
+     .setInputCols(['document'])
+     .setOutputCol('normalized_document'))
+    
 
     (sentence_detector
-     .setInputCols(['document'])
+     .setInputCols(['normalized_document'])
      .setOutputCol('sentences'))
 
     (tokenizer
@@ -187,27 +251,158 @@ def build_bowbae_pipeline(pipeline_components=None):
 
     (lemmatizer
      .setInputCols(['cleaned'])
-     .setOutputCol('lemmatized'))
-
-    (normalizer
-     .setInputCols(['lemmatized'])
      .setOutputCol('unigrams'))
 
+    (normalizer
+     .setInputCols(['cleaned'])
+     .setOutputCol('unigrams'))
+    
+#     (spell_checker
+#      .setInputCols(['normalized'])
+#      .setOutputCol('unigrams'))
+    
+    (ngrammer
+     .setInputCols(['unigrams'])
+     .setOutputCol('naive_ngrams'))
+    
+    (pos_tagger
+     .setInputCols(['unigrams', 'sentences'])
+     .setOutputCol('pos_tags'))
+    
+    (chunker
+     .setInputCols(['normalized_document', 'pos_tags'])
+     .setOutputCol('ngrams')
+    )
+    
     (finisher
-     .setInputCols(['unigrams', 'emojis']))
+     .setInputCols(['tokenized',
+                    'emojis', 
+                    'unigrams', 
+                    'naive_ngrams',
+                    'pos_tags',
+                    'ngrams'
+                   ]))
 
     pipeline = (Pipeline()
                 .setStages([assembler,
                             emoji_matcher,
                             assembler_no_emojis,
+                            document_normalizer,
                             sentence_detector,
                             tokenizer,
                             stopwords_cleaner,
                             lemmatizer,
-                            normalizer,
+                             normalizer,
+#                             spell_checker,
+                            ngrammer,
+                            pos_tagger,
+                            chunker,
                             finisher]))
 
     # to do: try LightPipeline as in
     # https://nlp.johnsnowlabs.com/docs/en/concepts#lightpipeline
 
     return pipeline
+
+def get_new_components():
+    # get cache mananager to avoid repeated downloads
+    cache_manager = PretrainedCacheManager()
+    cache_manager.get_pretrained_components()
+    # this is a dict with entries as in
+    # ('lemmatizer', path-to-downloaded-unzipped-lemmatizer)
+    pretrained_components = cache_manager.pretrained_components
+
+    # get document assemblers
+    assembler = DocumentAssembler()
+    # note: shrink cleanup mode seems to lose some sentnces
+    # anyway, sentencer seems to make document cleanup redundant
+
+    # get sentence detector
+    # this currently turns an ellipis into a period.
+    sentence_detector = (
+        SentenceDetector()
+        .setMinLength(3)
+        .setExplodeSentences(True)
+    )
+    #.setExplodeSentences(True)
+
+    # build normalizer
+    document_normalizer = (
+        DocumentNormalizer()
+        # .setLowercase(True)
+    )
+    # this does not keep all emojis, but it keeps a lot of them.
+    # for instance, it does not distinguish skin color, but it has
+    # enough characters to express the Becky emoji.
+    keeper_regex = ''.join([
+        '[^0-9A-Za-z$&%\.,?!\'‘’\"“”',
+        ''.join(emoji_ranges),
+        ']' 
+    ])
+    document_normalizer.setPatterns([keeper_regex,
+                                     'http.*',])
+
+#     USE = (
+#         UniversalSentenceEncoder()
+#         .load(pretrained_components["USE"])
+#     )
+    
+    # build finisher
+    finisher = Finisher()
+
+    return (assembler,
+            sentence_detector,
+            document_normalizer,
+#             USE,
+            finisher)
+
+
+# bag of words bag of emojis pipeline
+def build_new_pipeline(pipeline_components=None):
+    # get_pipeline_components
+    if not pipeline_components:
+        _ = get_new_components()
+    else:
+        _ = pipeline_components
+    (assembler,
+     sentence_detector,
+     document_normalizer,
+     # USE,
+     finisher
+    ) = _
+
+    # assemble the pipeline
+    (assembler
+     .setInputCol('text')
+     .setOutputCol('document'))
+
+    (document_normalizer
+     .setInputCols(['document'])
+     .setOutputCol('normalized_document'))
+
+    (sentence_detector
+     .setInputCols(['normalized_document'])
+     .setOutputCol('sentences'))
+
+#     (USE
+#      .setInputCols(['sentences'])
+#      .setOutputCol('use_embedding')
+
+    (finisher
+     .setInputCols(['sentences']))
+
+    pipeline = (Pipeline()
+                .setStages([assembler,
+                            document_normalizer,
+                            sentence_detector,
+#                             USE, 
+#                             finisher
+                            ]))
+
+    # to do: try LightPipeline as in
+    # https://nlp.johnsnowlabs.com/docs/en/concepts#lightpipeline
+
+    return pipeline
+
+
+

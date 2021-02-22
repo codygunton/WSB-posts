@@ -30,6 +30,16 @@ class PretrainedCacheManager:
         self.urls["stopwords"] = (base_url +
                                   "/stopwords_en_en_2.5.4_2.4_" +
                                   "1594742439135.zip")
+#         self.urls["spell_checker"] = (base_url +
+#                                   "/spellcheck_norvig_en_2.1.0_2.4_" +
+#                                   "1563017660080.zip")
+#         self.urls["USE"] = (base_url + 
+#                             "/tfhub_use_en_2.4.0_2.4_" +
+#                                   "1587136330099.zip")
+        self.urls["pos_tagger"] = (base_url +
+                                  "/pos_anc_en_2.0.2_2.4_" +
+                                  "1556659930154.zip")
+
         # this will be a dict with entries as in
         # ('lemmatizer', path-to-downloaded-unzipped-lemmatizer)
         self.pretrained_components = {}
