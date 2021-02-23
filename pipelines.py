@@ -1,18 +1,5 @@
 from sparknlp.base import (DocumentAssembler,
                            Finisher)
-# from sparknlp.annotator import (RegexMatcher,
-#                                 Tokenizer,
-#                                 SentenceDetector,
-#                                 SentenceDetectorDLApproach,
-#                                 Normalizer,
-#                                 DocumentNormalizer,
-#                                 LemmatizerModel,
-#                                 StopWordsCleaner,
-#                                 NorvigSweetingModel,
-#                                 UniversalSentenceEncoder,
-#                                 NGramGenerator,
-#                                 # PerceptronModel
-#                                 )
 from sparknlp.annotator import *
 from pyspark.ml import Pipeline
 import unicodedata
@@ -68,7 +55,6 @@ def get_bowbae_components():
     emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
                                    delimiter="~")
 
-
       # build normalizer
     document_normalizer = (
         DocumentNormalizer()
@@ -78,45 +64,49 @@ def get_bowbae_components():
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join([
-        '[^0-9A-Za-z$&%\.,?!\'‘’\"“”',
-#         ''.join(emoji_ranges),
+        '[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”',
+        # ''.join(emoji_ranges)
         ']' 
     ])
     document_normalizer.setPatterns([keeper_regex,
-                                     'http.*',])    
+                                     'http.*'])    
 
     
     # get sentence detector
     sentence_detector = SentenceDetector()
 
     # build tokenizer
-    tokenizer = Tokenizer()
-    # add ['‘', '’', '“', '”'] as context characters
+    tokenizer = Tokenizer().setInfixPatterns(['(\w+)(n\'t)',
+                                              '(\w+)(\'m)',
+                                              '(\w+)(\'s)'
+    ])
+    # could add ['‘', '’', '“', '”'] as context characters.
+    # I  preprocess using spark.sql.functions.
+    # 
     # doing this in a verbose way because it may be clarifying.
-    char_names = ['LEFT SINGLE QUOTATION MARK',
-                  'RIGHT SINGLE QUOTATION MARK',
-                  'LEFT DOUBLE QUOTATION MARK',
-                  'RIGHT DOUBLE QUOTATION MARK']
-    for name in char_names:
-        tokenizer.addContextChars(unicodedata.lookup(name))
-    # now set exceptions.
-    # 1) to preserve word preceding "sell" and "hold",
-    #    so that, e.g., "don't sell" is not normalized to "sell".
-    # 2) don't split "game stop" (...or "game stonk")
-    # 3) if an emoji is repeated with spaces, don't split
-    #    so we can normalize later
-    tokenizer.setExceptions(["\S+ sell",
-                             "\S+ hold",
-                             "\S+ buy",
-                             "game [stop|stonk]",
-                            ])
-    tokenizer.setCaseSensitiveExceptions(True)
+    # char_names = ['LEFT SINGLE QUOTATION MARK',
+    #               'RIGHT SINGLE QUOTATION MARK',
+    #               'LEFT DOUBLE QUOTATION MARK',
+    #               'RIGHT DOUBLE QUOTATION MARK']
+    # for name in char_names:
+    #     tokenizer.addContextChars(unicodedata.lookup(name))
+    # # now set exceptions.
+    # # 1) to preserve word preceding "sell" and "hold",
+    # #    so that, e.g., "don't sell" is not normalized to "sell".
+    # # 2) don't split "game stop" (...or "game stonk")
+    # # 3) if an emoji is repeated with spaces, don't split
+    # #    so we can normalize later
+    # tokenizer.setExceptions(["[a-zA-Z0-9\']\s+sell",
+    #                          "[a-zA-Z0-9\']\s+hold",
+    #                          "[a-zA-Z0-9\']\s+buy",  #r'\S+ buy' was the culprit
+    #                          "game\s*[stop|stonk]",
+    #                         ])
 
     # built stopwords cleaner
     stopwords_cleaner = (
         StopWordsCleaner()
         # on second thought, maybe the larger list of stopwords that I
-        # was downloading was too expansive. e.g., it has the word "example"
+        # was downloading was too expansive. E.g., it has the word "example"
         # .load(pretrained_components["stopwords"])
         .setCaseSensitive(False)
     )
@@ -135,8 +125,14 @@ def get_bowbae_components():
     stopwords_cleaner.setStopWords(stopwords)
 
     # build lemmatizer
+    # dict from: https://raw.githubusercontent.com/mahavivo/\
+    #                    vocabulary/master/lemmas/AntBNC_lemmas_ver_001.txt
     lemmatizer = (
-        LemmatizerModel().load(pretrained_components["lemmatizer"])
+        Lemmatizer()
+        .setDictionary("./AntBNC_lemmas_ver_001.txt",
+                       value_delimiter ="\t",
+                       key_delimiter = "->")
+        # .load(pretrained_components["lemmatizer"])
     )
 
     # build normalizer
@@ -148,10 +144,10 @@ def get_bowbae_components():
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join([
-        '[^0-9A-Za-z$&%=',
+        '[^0-9A-Za-z\$&%=',
         ']'
     ])
-    normalizer.setCleanupPatterns([keeper_regex, "\'\"",
+    normalizer.setCleanupPatterns([keeper_regex,
                                    'http.*'])
 #     # decided to scrap:
 #     # Norvig-Sweeting takes "January" to "manuary"
@@ -175,7 +171,13 @@ def get_bowbae_components():
     
     chunker = (
         Chunker()
-        .setRegexParsers(['<JJ>+<NN>', '<NN>+<NN>'])
+        .setRegexParsers(['<JJ>+<NN>',
+                          '<NN>+<NN>',
+                          '<MD>+<VB>',
+                          '<MD>+<RB>+<VB>',
+                          '<VBP>+<RB>+<VB>',
+                          '<VBP>+<RB>+<VB>+<NN>'
+                          ])
     )
     
     # build finisher
@@ -204,6 +206,7 @@ def build_bowbae_pipeline(pipeline_components=None):
         _ = get_bowbae_components()
     else:
         _ = pipeline_components
+
     (assembler,
      assembler_no_emojis,
      emoji_matcher,
@@ -242,19 +245,19 @@ def build_bowbae_pipeline(pipeline_components=None):
      .setOutputCol('sentences'))
 
     (tokenizer
-     .setInputCols(['sentences'])
+     .setInputCols(['normalized_document'])
      .setOutputCol('tokenized'))
 
-    (stopwords_cleaner
-     .setInputCols(['tokenized'])
-     .setOutputCol('cleaned'))
+    # (stopwords_cleaner
+    #  .setInputCols(['tokenized'])
+    #  .setOutputCol('cleaned'))
 
     (lemmatizer
-     .setInputCols(['cleaned'])
-     .setOutputCol('unigrams'))
+     .setInputCols(['tokenized'])
+     .setOutputCol('lemmatized'))
 
     (normalizer
-     .setInputCols(['cleaned'])
+     .setInputCols(['lemmatized'])
      .setOutputCol('unigrams'))
     
 #     (spell_checker
@@ -266,7 +269,7 @@ def build_bowbae_pipeline(pipeline_components=None):
      .setOutputCol('naive_ngrams'))
     
     (pos_tagger
-     .setInputCols(['unigrams', 'sentences'])
+     .setInputCols(['normalized_document', 'unigrams'])
      .setOutputCol('pos_tags'))
     
     (chunker
@@ -276,6 +279,8 @@ def build_bowbae_pipeline(pipeline_components=None):
     
     (finisher
      .setInputCols(['tokenized',
+                    # 'cleaned',
+                    'lemmatized',
                     'emojis', 
                     'unigrams', 
                     'naive_ngrams',
@@ -290,10 +295,10 @@ def build_bowbae_pipeline(pipeline_components=None):
                             document_normalizer,
                             sentence_detector,
                             tokenizer,
-                            stopwords_cleaner,
+                            # stopwords_cleaner,
                             lemmatizer,
-                             normalizer,
-#                             spell_checker,
+                            normalizer,
+                            # spell_checker,
                             ngrammer,
                             pos_tagger,
                             chunker,
@@ -304,7 +309,7 @@ def build_bowbae_pipeline(pipeline_components=None):
 
     return pipeline
 
-def get_new_components():
+def get_embedding_preproc_components():
     # get cache mananager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
@@ -358,10 +363,10 @@ def get_new_components():
 
 
 # bag of words bag of emojis pipeline
-def build_new_pipeline(pipeline_components=None):
+def build_embedding_preproc_pipeline(pipeline_components=None):
     # get_pipeline_components
     if not pipeline_components:
-        _ = get_new_components()
+        _ = get_embedding_preproc_components()
     else:
         _ = pipeline_components
     (assembler,

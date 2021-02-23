@@ -1,13 +1,13 @@
 # I think if I rewrote the pipeline in Scala I could use the
 # ResourceDownloader class to manage cashed pretrained, but
 # the Python interface seemes to be really limited at the moment.
-# This file gives a simple way of manginging the model cache
-# to avoid downloading the fiels every time we instantiate them
+# This file gives a simple way of managinging the model cache
+# to avoid downloading the files every time we instantiate them
 # pipeline components.
 
 # The links to the resources are found manually using the models db
 # maintained by John Snow Labs. Keeping the defauled chache dir,
-# unless the aws addreess changes, it should also work to download
+# unless the aws address changes, it should also work to download
 # resources once using the .pretrained methods LemmatizerModel, etc.
 
 import os
