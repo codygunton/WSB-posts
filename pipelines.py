@@ -1,5 +1,6 @@
 from sparknlp.base import (DocumentAssembler,
                            Finisher)
+
 from sparknlp.annotator import *
 from pyspark.ml import Pipeline
 import unicodedata
@@ -37,7 +38,7 @@ def write_emoji_matcher_rules():
         fobj.writelines([matcher_rule])
 
 
-def get_bowbae_components():
+def get_lda_components():
     # get cache mananager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
@@ -45,17 +46,17 @@ def get_bowbae_components():
     # ('lemmatizer', path-to-downloaded-unzipped-lemmatizer)
     pretrained_components = cache_manager.pretrained_components
 
-    # get document assemblers
+    # document assemblers
     assembler = DocumentAssembler()
     assembler_no_emojis = DocumentAssembler()
 
-    # get matcher
+    # get regex matcher for emojis
     write_emoji_matcher_rules()
     emoji_matcher = RegexMatcher()
     emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
                                    delimiter="~")
 
-      # build normalizer
+    # build document normalizer. Will normalize tokens later.
     document_normalizer = (
         DocumentNormalizer()
         .setLowercase(True)
@@ -63,70 +64,26 @@ def get_bowbae_components():
     # this does not keep all emojis, but it keeps a lot of them.
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
-    keeper_regex = ''.join([
-        '[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”',
-        # ''.join(emoji_ranges)
-        ']' 
-    ])
+    keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
     document_normalizer.setPatterns([keeper_regex,
                                      'http.*'])    
-
     
-    # get sentence detector
+    # get sentence detector. This is  used for POS tagging.
     sentence_detector = SentenceDetector()
 
-    # build tokenizer
-    tokenizer = Tokenizer().setInfixPatterns(['(\w+)(n\'t)',
-                                              '(\w+)(\'m)',
-                                              '(\w+)(\'s)'
-    ])
-    # could add ['‘', '’', '“', '”'] as context characters.
-    # I  preprocess using spark.sql.functions.
-    # 
-    # doing this in a verbose way because it may be clarifying.
-    # char_names = ['LEFT SINGLE QUOTATION MARK',
-    #               'RIGHT SINGLE QUOTATION MARK',
-    #               'LEFT DOUBLE QUOTATION MARK',
-    #               'RIGHT DOUBLE QUOTATION MARK']
-    # for name in char_names:
-    #     tokenizer.addContextChars(unicodedata.lookup(name))
-    # # now set exceptions.
-    # # 1) to preserve word preceding "sell" and "hold",
-    # #    so that, e.g., "don't sell" is not normalized to "sell".
-    # # 2) don't split "game stop" (...or "game stonk")
-    # # 3) if an emoji is repeated with spaces, don't split
-    # #    so we can normalize later
-    # tokenizer.setExceptions(["[a-zA-Z0-9\']\s+sell",
-    #                          "[a-zA-Z0-9\']\s+hold",
-    #                          "[a-zA-Z0-9\']\s+buy",  #r'\S+ buy' was the culprit
-    #                          "game\s*[stop|stonk]",
-    #                         ])
-
-    # built stopwords cleaner
-    stopwords_cleaner = (
-        StopWordsCleaner()
-        # on second thought, maybe the larger list of stopwords that I
-        # was downloading was too expansive. E.g., it has the word "example"
-        # .load(pretrained_components["stopwords"])
-        .setCaseSensitive(False)
+    # build tokenier
+    tokenizer = (
+        Tokenizer()
+        .setInfixPatterns(  # didn't try to be exhaustive here.
+        ['(\w+)(n\'t)',     # split wasn't |-> was n't
+         '(\w+)(\'m)',      #         I'm  |-> I 'm      
+         '(\w+)(\'s)'       #       she's  |-> she 's
+         ])
     )
-    # for each stopword involving an apostrophe ('), append
-    # a version of the stopword using the character (’) instead,
-    # and a version with the apostrophe missing
-    char = unicodedata.lookup('APOSTROPHE')
-    replacement = unicodedata.lookup('RIGHT SINGLE QUOTATION MARK')
-    stopwords = stopwords_cleaner.getStopWords()
-    stopwords += ["y'all", "yall"]
-    for s in stopwords_cleaner.getStopWords():
-        if char in s:
-            stopwords.append(s.replace(char, replacement))
-            stopwords.append(s.replace(char, ""))
-    stopwords.sort()
-    stopwords_cleaner.setStopWords(stopwords)
-
-    # build lemmatizer
-    # dict from: https://raw.githubusercontent.com/mahavivo/\
-    #                    vocabulary/master/lemmas/AntBNC_lemmas_ver_001.txt
+    
+    # build lemmatizer. dict from:
+    #  https://raw.githubusercontent.com/mahavivo/\
+    #          vocabulary/master/lemmas/AntBNC_lemmas_ver_001.txt
     lemmatizer = (
         Lemmatizer()
         .setDictionary("./AntBNC_lemmas_ver_001.txt",
@@ -135,48 +92,42 @@ def get_bowbae_components():
         # .load(pretrained_components["lemmatizer"])
     )
 
-    # build normalizer
-    normalizer = (
-        Normalizer()
-        .setLowercase(True)
-    )
-    # this does not keep all emojis, but it keeps a lot of them.
-    # for instance, it does not distinguish skin color, but it has
-    # enough characters to express the Becky emoji.
-    keeper_regex = ''.join([
-        '[^0-9A-Za-z\$&%=',
-        ']'
-    ])
-    normalizer.setCleanupPatterns([keeper_regex,
-                                   'http.*'])
-#     # decided to scrap:
-#     # Norvig-Sweeting takes "January" to "manuary"
-#     # Context-Aware DL model takes "Gamestop" to "Jameson".
-#     spell_checker = (
-#         NorvigSweetingModel()
-# #         .pretrained()
-#         .load(pretrained_components["spell_checker"])
-#     )
+    # build token normalizer
+    normalizer = Normalizer()
+    keeper_regex = ''.join(['[^0-9A-Za-z\$&%=]'])    
+    normalizer.setCleanupPatterns([keeper_regex])
 
+    # build stopwords cleaner
+    stopwords_cleaner = (
+        StopWordsCleaner()
+        .setCaseSensitive(False)
+    )    
+    
+
+    # build n-gram generator.
     ngrammer = (
         NGramGenerator()
         .setN(2)
         .setDelimiter("_")
     )
-    
+
+    # build POS tagger. I wish there were one trained on
+    # social media posts, but this doesn't seem to do so badly.
     pos_tagger = (
         PerceptronModel()
         .load(pretrained_components["pos_tagger"])
     )
-    
+
+
+    # choose which sequences of POS tags can be used to generate n-grams.
+    # I choose a large list for purposes of illustraiton, but I would advocate
+    # to be more focused in practice, depending on particular objectives.
     chunker = (
         Chunker()
-        .setRegexParsers(['<JJ>+<NN>',
-                          '<NN>+<NN>',
-                          '<MD>+<VB>',
-                          '<MD>+<RB>+<VB>',
-                          '<VBP>+<RB>+<VB>',
-                          '<VBP>+<RB>+<VB>+<NN>'
+        .setRegexParsers(['<JJ>+<NN>',            # adjective-noun
+                          '<NN>+<NN>',            # noun-noun
+                          '<MD>+<RB>*<VB>',       # [should, not, sell]
+                          '<VBP>*<RB>*<VB>+<NN>'  # [do*, not*, sell, gme]
                           ])
     )
     
@@ -192,7 +143,6 @@ def get_bowbae_components():
             stopwords_cleaner,
             lemmatizer, 
             normalizer,
-#             spell_checker,
             ngrammer,
             pos_tagger,
             chunker,
@@ -200,10 +150,10 @@ def get_bowbae_components():
 
 
 # bag of words bag of emojis pipeline
-def build_bowbae_pipeline(pipeline_components=None):
+def build_lda_pipeline(pipeline_components=None):
     # get_pipeline_components
     if not pipeline_components:
-        _ = get_bowbae_components()
+        _ = get_lda_components()
     else:
         _ = pipeline_components
 
@@ -216,13 +166,13 @@ def build_bowbae_pipeline(pipeline_components=None):
      stopwords_cleaner,
      lemmatizer,
      normalizer,
-#      spell_checker,
      ngrammer,
      pos_tagger,
      chunker,
      finisher) = _
 
     # assemble the pipeline
+    
     (assembler
      .setInputCol('text')
      .setOutputCol('document_emojis'))
@@ -248,10 +198,6 @@ def build_bowbae_pipeline(pipeline_components=None):
      .setInputCols(['normalized_document'])
      .setOutputCol('tokenized'))
 
-    # (stopwords_cleaner
-    #  .setInputCols(['tokenized'])
-    #  .setOutputCol('cleaned'))
-
     (lemmatizer
      .setInputCols(['tokenized'])
      .setOutputCol('lemmatized'))
@@ -259,27 +205,28 @@ def build_bowbae_pipeline(pipeline_components=None):
     (normalizer
      .setInputCols(['lemmatized'])
      .setOutputCol('unigrams'))
+
+    (stopwords_cleaner
+     .setInputCols(['unigrams'])
+     .setOutputCol('cleaned_unigrams'))
     
-#     (spell_checker
-#      .setInputCols(['normalized'])
-#      .setOutputCol('unigrams'))
     
     (ngrammer
-     .setInputCols(['unigrams'])
+     .setInputCols(['cleaned_unigrams'])
      .setOutputCol('naive_ngrams'))
     
     (pos_tagger
-     .setInputCols(['normalized_document', 'unigrams'])
+     .setInputCols(['sentences', 'unigrams'])
      .setOutputCol('pos_tags'))
     
     (chunker
-     .setInputCols(['normalized_document', 'pos_tags'])
+     .setInputCols(['sentences', 'pos_tags'])
      .setOutputCol('ngrams')
     )
-    
+
     (finisher
      .setInputCols(['tokenized',
-                    # 'cleaned',
+                    'cleaned_unigrams',
                     'lemmatized',
                     'emojis', 
                     'unigrams', 
@@ -295,19 +242,18 @@ def build_bowbae_pipeline(pipeline_components=None):
                             document_normalizer,
                             sentence_detector,
                             tokenizer,
-                            # stopwords_cleaner,
                             lemmatizer,
                             normalizer,
-                            # spell_checker,
+                            stopwords_cleaner,
                             ngrammer,
                             pos_tagger,
                             chunker,
                             finisher]))
 
-    # to do: try LightPipeline as in
-    # https://nlp.johnsnowlabs.com/docs/en/concepts#lightpipeline
-
     return pipeline
+
+
+# Pipeline for cleaning text before processing with pretrained embeddings.
 
 def get_embedding_preproc_components():
     # get cache mananager to avoid repeated downloads
@@ -362,7 +308,6 @@ def get_embedding_preproc_components():
             finisher)
 
 
-# bag of words bag of emojis pipeline
 def build_embedding_preproc_pipeline(pipeline_components=None):
     # get_pipeline_components
     if not pipeline_components:
