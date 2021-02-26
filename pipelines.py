@@ -89,7 +89,8 @@ def get_lda_components():
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
     document_normalizer.setPatterns([keeper_regex,
-                                     'http.*'])    
+                                     'http.*', 
+                                     '\&*\#*x200B\S*'])
     
     # get sentence detector. This is  used for POS tagging.
     sentence_detector = SentenceDetector()
