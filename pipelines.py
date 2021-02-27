@@ -9,11 +9,10 @@ import pyspark.sql.functions as F
 
 from download_pretrained import PretrainedCacheManager
 
-emojis_regex = (
-    '[' + 
+emojis_regex = ( # first the Becky emoji
+    '\U0001f471\u200d\u2640\ufe0f|' +
+    '[' +
     "".join([
-        # special characters for Becky
-        '\u200d\u2640\u2641\u26A5\ufe0f',
         # ranges covering all emojis expressible
         # using only one unicode character.
         '\U0001f300-\U0001f321',
