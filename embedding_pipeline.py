@@ -47,22 +47,31 @@ def preprocess_texts(df):
     texts = (
         # to do: make its own module extending spark Transformer
         # to do: learn to efficiently fuse these in Spark SQL.
+        #
+        # I would like to do mild emoji normalization followed by
+        # fine tuning a language model to learn the meaning of a few
+        # of the major emojis, but for now I just drop them and use
+        # a sentence embedding that probably doesn't benefit from 
+        # the presence of emojis here.
         df
         .withColumn("text",
                       F.regexp_replace("text",
-                                       # replacing with "" is bad in LDA. why?
-                                       emojis_regex+"|[\\n]",
-                                       ""))
+                                       "http\S+|\&*\#*x200B\S*|\\*",
+                                       " " # can't replace with ""
+                                       ))
+        # this replacement leads, eventually, to the chosen expressions
+        # being deleted later on by other components' handling of white
+        # space and periods.
         .withColumn("text",
                       F.regexp_replace("text",
-                                       "\.*\s*\.{2,}",
-                                       "..."))
+                                       emojis_regex
+                                       + "|[\\n\\r]|\\- |[\.]{2,}",
+                                       ". "))
         .withColumn("text", 
                       F.regexp_replace("text", "[“”]", "\""))
         .withColumn("text", 
                     F.regexp_replace("text", "[‘’]", "\'"))
         
-        # to keep positions of emojis (not necessary, currently)
         .select(["id", 
                  "text"])
     )    
@@ -103,13 +112,10 @@ def get_embedding_preproc_components():
     # enough characters to express the Becky emoji.
     keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
     document_normalizer.setPatterns([keeper_regex,
-                                     'http\S+', 
-                                     '\&*\#*x200B\S*'])
-    
-#     USE = (
-#         UniversalSentenceEncoder()
-#         .load(pretrained_components["USE"])
-#     )
+                                     # 'http\S+', 
+                                     # '\&*\#*x200B\S*'
+                                     ])
+
     
     # build finisher
     finisher = Finisher().setIncludeMetadata(True)
@@ -117,7 +123,6 @@ def get_embedding_preproc_components():
     return (assembler,
             sentence_detector,
             document_normalizer,
-#             USE,
             finisher)
 
 
