@@ -46,19 +46,25 @@ def write_emoji_matcher_rules():
 def preprocess_texts(df):
     texts = (
         # to do: make its own module extending spark Transformer
-        df.withColumn("text_no_emojis",
+        # to do: learn to efficiently fuse these in Spark SQL.
+        df
+        .withColumn("text",
                       F.regexp_replace("text",
-                                       # replacing with "" is bad
-                                       emojis_regex, " "))
-        .withColumn("text_no_emojis", 
-                      F.regexp_replace("text_no_emojis", "[“”]", "\""))
-        .withColumn("text_no_emojis", 
-                    F.regexp_replace("text_no_emojis", "[‘’]", "\'"))
+                                       # replacing with "" is bad in LDA. why?
+                                       emojis_regex+"|[\\n]",
+                                       ""))
+        .withColumn("text",
+                      F.regexp_replace("text",
+                                       "\.*\s*\.{2,}",
+                                       "..."))
+        .withColumn("text", 
+                      F.regexp_replace("text", "[“”]", "\""))
+        .withColumn("text", 
+                    F.regexp_replace("text", "[‘’]", "\'"))
+        
         # to keep positions of emojis (not necessary, currently)
         .select(["id", 
-                 "timestamp", 
-                 "text", 
-                 "text_no_emojis"])
+                 "text"])
     )    
     return texts
 
