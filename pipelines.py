@@ -9,7 +9,8 @@ import pyspark.sql.functions as F
 
 from download_pretrained import PretrainedCacheManager
 
-emojis_regex = ( # first the Becky emoji
+emojis_regex = ( 
+    # first the Becky emoji
     '\U0001f471\u200d\u2640\ufe0f|' +
     '[' +
     "".join([
@@ -44,18 +45,20 @@ def write_emoji_matcher_rules():
 
 def preprocess_texts(df):
     texts = (
-        # to do: find uniform way of preprocessing usingn pure Spark
-        #        can only find convoluted ways in Spark NLP.
-        #        Is using a UDF slower?
+        # to do: make its own module extending spark Transformer
         df.withColumn("text_no_emojis",
                       F.regexp_replace("text",
-                                       emojis_regex, " "))  # replacing with "" is bad
+                                       # replacing with "" is bad
+                                       emojis_regex, " "))
         .withColumn("text_no_emojis", 
                       F.regexp_replace("text_no_emojis", "[“”]", "\""))
         .withColumn("text_no_emojis", 
                     F.regexp_replace("text_no_emojis", "[‘’]", "\'"))
         # to keep positions of emojis (not necessary, currently)
-        .select(["text", "text_no_emojis"])
+        .select(["id", 
+                 "timestamp", 
+                 "text", 
+                 "text_no_emojis"])
     )    
     return texts
 
@@ -85,10 +88,9 @@ def get_lda_components():
         .setLowercase(True)
     )
     # this does not keep all emojis, but it keeps a lot of them.
-    # enough characters to express the Becky emoji.
     keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
     document_normalizer.setPatterns([keeper_regex,
-                                     'http.*', 
+                                     'http\S+', 
                                      '\&*\#*x200B\S*'])
     
     # get sentence detector. This is  used for POS tagging.
@@ -339,6 +341,7 @@ def build_lda_preproc_pipeline(pipeline_components=None):
     return pipeline
 
 
+
 # Pipeline for cleaning text before processing with pretrained embeddings.
 # This is under construction.
 def get_embedding_preproc_components():
@@ -371,21 +374,18 @@ def get_embedding_preproc_components():
     # this does not keep all emojis, but it keeps a lot of them.
     # for instance, it does not distinguish skin color, but it has
     # enough characters to express the Becky emoji.
-    keeper_regex = ''.join([
-        '[^0-9A-Za-z$&%\.,?!\'‘’\"“”',
-        ''.join(emoji_ranges),
-        ']' 
-    ])
+    keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
     document_normalizer.setPatterns([keeper_regex,
-                                     'http.*',])
-
+                                     'http\S+', 
+                                     '\&*\#*x200B\S*'])
+    
 #     USE = (
 #         UniversalSentenceEncoder()
 #         .load(pretrained_components["USE"])
 #     )
     
     # build finisher
-    finisher = Finisher()
+    finisher = Finisher().setIncludeMetadata(True)
 
     return (assembler,
             sentence_detector,
@@ -420,10 +420,6 @@ def build_embedding_preproc_pipeline(pipeline_components=None):
      .setInputCols(['normalized_document'])
      .setOutputCol('sentences'))
 
-#     (USE
-#      .setInputCols(['sentences'])
-#      .setOutputCol('use_embedding')
-
     (finisher
      .setInputCols(['sentences']))
 
@@ -432,7 +428,42 @@ def build_embedding_preproc_pipeline(pipeline_components=None):
                             document_normalizer,
                             sentence_detector,
 #                             USE, 
-#                             finisher
+                            finisher
                             ]))
 
     return pipeline
+
+
+def embedding_preproc_finisher(df):    
+    output = (df
+              .select("text", "unigrams")
+              # explode unigrams columsn into rows
+              .withColumn("exploded", 
+                          F.explode(df['unigrams']))
+              # select only columns of intereest
+              .select("text", "exploded.result", "exploded.metadata"))
+
+    output = (output
+              .select("text",
+                      output["result"].alias("unigram"),
+                      # metadata is a map as in sentence -> 0 (or 1, 2,...)
+                      # just keep the value
+                      F.element_at(output.metadata, 'sentence')
+                      .alias("sentence"))
+              # concatenate unigrams to ngrams
+              .groupby('sentence', 'text')
+              .agg(F.concat_ws("_", F.collect_list('unigram'))
+                    .alias("ngram"))
+              # collect ngrams into arrays, one for each text
+              .groupby('text')
+              .agg(F.collect_list('ngram')
+                    .alias("finished_ngrams")))
+    
+    # adjoin emojis
+    emoji_finisher = Finisher().setInputCols("emojis")
+    emoji_df = emoji_finisher.transform(df)
+    output = (output
+              .join(emoji_df.select("text", "finished_emojis"), 
+                    "text"))
+    
+    return output
