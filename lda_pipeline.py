@@ -64,7 +64,7 @@ def preprocess_texts(df):
 
 
 
-def get_lda_components():
+def get_components(lda = True):
     # get cache mananager to avoid repeated downloads
     cache_manager = PretrainedCacheManager()
     cache_manager.get_pretrained_components()
@@ -74,37 +74,39 @@ def get_lda_components():
 
     # document assemblers
     assembler = DocumentAssembler()
-    assembler_no_emojis = DocumentAssembler()
+    if lda: assembler_no_emojis = DocumentAssembler()
 
-    # get regex matcher for emojis
-    write_emoji_matcher_rules()
-    emoji_matcher = RegexMatcher()
-    emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
-                                   delimiter="~")
+    if lda:
+        # get regex matcher for emojis
+        write_emoji_matcher_rules()
+        emoji_matcher = RegexMatcher()
+        emoji_matcher.setExternalRules("emoji_matcher_rules.csv",
+                                       delimiter="~")
 
-    # build document normalizer. Will normalize tokens later.
-    document_normalizer = (
-        DocumentNormalizer()
-        .setLowercase(True)
-    )
-    # this does not keep all emojis, but it keeps a lot of them.
-    keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
-    document_normalizer.setPatterns([keeper_regex,
-                                     'http\S+', 
-                                     '\&*\#*x200B\S*'])
-    
-    # get sentence detector. This is  used for POS tagging.
-    sentence_detector = SentenceDetector()
+    if lda:
+        # build document normalizer. Will normalize tokens later.
+        document_normalizer = (
+            DocumentNormalizer()
+            .setLowercase(True)
+        )
+        # this does not keep all emojis, but it keeps a lot of them.
+        keeper_regex = ''.join(['[^0-9A-Za-z\$\&%\.,\?!\'‘’\"“”]'])
+        document_normalizer.setPatterns([keeper_regex,
+                                         'http\S+', 
+                                         '\&*\#*x200B\S*'])
+
+        # get sentence detector. This is  used for POS tagging.
+        sentence_detector = SentenceDetector()
 
     # build tokeniers
     tokenizer_infix_patterns = [
         # didn't try to be exhaustive here.
         '(\w+)(n\'t)',    # split wasn't |-> was  n't
-        '(\w+)(\'m)',     #          I'm |-> I     'm      
+        '(\w+)(\'m)',     #          I'm |-> I     'm     
         '(\w+)(\'s)',     #        she's |-> she   's
         '(\w+)(\'d)',     #           'd |->       'd
-        '(\w+)(\'ve)',     #          've |->       've
-        '(\w+)(\'re)'     #          've |->       've      
+        '(\w+)(\'ve)',    #          've |->       've
+        '(\w+)(\'re)'     #          're |->       're
     ]
     
     tokenizer = (
@@ -112,11 +114,18 @@ def get_lda_components():
         .setInfixPatterns(tokenizer_infix_patterns)
     )
 
-    tokenizer2 = (
-        Tokenizer()
-        .setInfixPatterns(tokenizer_infix_patterns)
-    )
-    
+    if lda:
+        tokenizer2 = (
+            Tokenizer()
+            .setInfixPatterns(tokenizer_infix_patterns)
+        )
+
+    # build stopwords cleaner
+    stopwords_cleaner = (
+        StopWordsCleaner()
+        .setCaseSensitive(False)
+    )            
+        
     # build lemmatizer. dict from:
     #  https://raw.githubusercontent.com/mahavivo/\
     #          vocabulary/master/lemmas/AntBNC_lemmas_ver_001.txt
@@ -132,69 +141,77 @@ def get_lda_components():
     # build token normalizer
     normalizer = Normalizer()
     keeper_regex = ''.join(['[^0-9A-Za-z\$&%=]'])    
-    normalizer.setCleanupPatterns([keeper_regex])
+    normalizer.setCleanupPatterns([keeper_regex])    
 
-    # build stopwords cleaner
-    stopwords_cleaner = (
-        StopWordsCleaner()
-        .setCaseSensitive(False)
-    )    
-    
+    if lda:
+        # build n-gram generator.
+        ngrammer = (
+            NGramGenerator()
+            .setN(2)
+            .setDelimiter("_")
+        )
 
-    # build n-gram generator.
-    ngrammer = (
-        NGramGenerator()
-        .setN(2)
-        .setDelimiter("_")
-    )
-
-    # build POS tagger. I wish there were one trained on
-    # social media posts, but this doesn't seem to do so badly.
-    pos_tagger = (
-        PerceptronModel()
-        .load(pretrained_components["pos_tagger"])
-    )
+    if lda:
+        # build POS tagger. I wish there were one trained on
+        # social media posts, but this doesn't seem to do so badly.
+        pos_tagger = (
+            PerceptronModel()
+            .load(pretrained_components["pos_tagger"])
+        )
 
 
-    # choose which sequences of POS tags can be used to generate n-grams.
-    chunker = (
-        Chunker()
-        .setRegexParsers(['<JJ>+<NN>',            # adjective-noun
-                          '<NN>+<NN>',            # noun-noun
-                          '<MD>+<RB>*<VB>',       # [should, not, sell]
-                          '<VBP>*<RB>*<VB>+<NN>'  # [do*, not*, sell, gme]
-                          ])
-    )
+    if lda:
+        # choose which sequences of POS tags can be used to generate n-grams.
+        chunker = (
+            Chunker()
+            .setRegexParsers(['<JJ>+<NN>',            # adjective-noun
+                              '<NN>+<NN>',            # noun-noun
+                              '<MD>+<RB>*<VB>',       # [should, not, sell]
+                              '<VBP>*<RB>*<VB>+<NN>'  # [do*, not*, sell, gme]
+                              ])
+        )
 
 
-    # convert POS chunks back to docs
-    chunk2doc = Chunk2Doc()
+    if lda:
+        # convert POS chunks back to docs
+        chunk2doc = Chunk2Doc()
 
-    # tokenize again
-    tokenizer2 = (
-        Tokenizer()
-        .setInfixPatterns(tokenizer_infix_patterns)
-    )
+    if lda:
+        # tokenize again
+        tokenizer2 = (
+            Tokenizer()
+            .setInfixPatterns(tokenizer_infix_patterns)
+        )
     
     # build finisher
     finisher = Finisher()
+    
+    if lda:
+        return (assembler,
+                assembler_no_emojis,
+                emoji_matcher,
+                document_normalizer,
+                sentence_detector,
+                tokenizer,
+                stopwords_cleaner,
+                lemmatizer, 
+                normalizer,
+                ngrammer,
+                pos_tagger,
+                chunker,
+                chunk2doc,
+                tokenizer2,
+                finisher)
 
-    return (assembler,
-            assembler_no_emojis,
-            emoji_matcher,
-            document_normalizer,
-            sentence_detector,
-            tokenizer,
-            stopwords_cleaner,
-            lemmatizer, 
-            normalizer,
-            ngrammer,
-            pos_tagger,
-            chunker,
-            chunk2doc,
-            tokenizer2,
-            finisher)
+    else:
+        return (assembler,
+                tokenizer,
+                stopwords_cleaner,
+                lemmatizer,
+                normalizer,
+                finisher)
 
+    
 def lda_preproc_finisher(df):
     # TODO: rewrite to this a class extending Transfromer as in SO51415784.
     # and then include as a pipeline component.
@@ -337,5 +354,70 @@ def build_lda_preproc_pipeline(pipeline_components=None):
                             normalizer
                            ]))
 
+
+    return pipeline
+
+
+
+
+def build_embcl_pipeline(use_finisher=True):
+    # get_pipeline_components
+    (assembler,
+     tokenizer,
+     stopwords_cleaner,
+     lemmatizer, 
+     normalizer,
+     finisher) =  get_components(lda=False)
+    
+
+    normalizer.setLowercase(True)
+    
+    # assemble the pipeline
+    
+    (assembler
+     .setInputCol('text')
+     .setOutputCol('document'))
+
+    (tokenizer
+     .setInputCols(['document'])
+     .setOutputCol('tokens'))
+    
+    # build stopwords cleaner
+    (stopwords_cleaner
+     .setInputCols(['tokens'])
+     .setOutputCol('cleaned'))
+
+    (lemmatizer
+     .setInputCols(['cleaned'])
+     .setOutputCol('lemmas'))
+
+    (normalizer
+     .setInputCols(['lemmas'])
+     .setOutputCol('unigrams'))
+    
+    
+    if use_finisher:
+        (finisher
+         .setInputCols(['unigrams'])
+    #      .setIncludeMetadata(True)
+        )
+        
+        pipeline = (Pipeline()
+                    .setStages([assembler,
+                                tokenizer,
+                                stopwords_cleaner,
+                                lemmatizer,
+                                normalizer,
+                                finisher
+                               ]))
+
+    else:
+        pipeline = (Pipeline()
+                    .setStages([assembler,
+                                tokenizer,
+                                stopwords_cleaner,
+                                lemmatizer,
+                                normalizer
+                               ]))        
 
     return pipeline
