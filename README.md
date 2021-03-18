@@ -17,7 +17,7 @@ Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/
 <iframe src="WSB-posts/assets/wsb_emb.html" 
         sandbox="allow-same-origin allow-scripts" 
         width="100%" 
-        height="500" 
+        height="800" 
         scrolling="no" 
         seamless="seamless" 
         frameborder="0"> </iframe> 
