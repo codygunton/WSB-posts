@@ -13,3 +13,5 @@ Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/
 ✔: SparkNLP preprocessing ⇝ [Universal Sentence Encoder CMLM](https://tfhub.dev/google/universal-sentence-encoder-cmlm/en-base/) ⇝ dimensionality reduction and clustering  ⇝ interactive Bokeh plot.
   - [Embedding and clustering here](./WSB_clustering.ipynb)
   - [Plotting and additional topic modelling here](./notebooks/plot_embedding.ipynb)
+
+A page with an interactive plot can be found [here](https://codygunton.github.io/WSB-posts/).
