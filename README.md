@@ -1,23 +1,12 @@
-# WSB-posts
+# r/WallSteetBets Posts
 
-🏗 Under construction 🏗
+As part of [a project to digest an analyze pots on the Subreddit r/WallStreetBets](https://github.com/codygunton/WSB-posts), I have created plots like the following one.  The posts were thoroughly cleaned using [Spark NLP](https://nlp.johnsnowlabs.com/). They were then embedded in 768 embeddings using the pretrained Tensorflow model [Universal Sentence Encoder CMLM](https://tfhub.dev/google/universal-sentence-encoder-cmlm/en-base/). From there, the dimension was reduced using [UMAP](https://umap-learn.readthedocs.io/en/latest/). With some hyperparameter tuning, the results were clustered using [HDBSCAN](https://hdbscan.readthedocs.io/en/latest/how_hdbscan_works.html). The resuts were then projeted into two dimensions using UMAP and plotted in Bokeh. This work, along with much more, is available at the public link above.
 
-Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/reddit-wallstreetsbets-post). I aim to go beyond direct sentiment analysis, to better understand the evolution of topics within the WSB sphere.
-
-✔: Exploration of the data: [here (basic)](./notebooks/eda.ipynb), [here (LDA pipeline development)](./notebooks/lda_pipeline_development.ipynb), [here (emojis)](./notebooks/emojis.ipynb), [here (cleaning)](./notebooks/embedding_prep.ipynb) and [here (more cleaning)](./notebooks/embedding_prep_2.ipynb).
-
-✔: SparkNLP pipelines for topic modeling with emojis, and with n-gram extraction using POS tagging. 
-  - [Demo here](./notebooks/lda_topic_modeling.ipynb).
-
-
-✔: SparkNLP preprocessing ⇝ [Universal Sentence Encoder CMLM](https://tfhub.dev/google/universal-sentence-encoder-cmlm/en-base/) ⇝ dimensionality reduction and clustering  ⇝ interactive Bokeh plot.
-  - [Embedding and clustering here](./WSB_clustering.ipynb)
-  - [Plotting and additional topic modelling here](./notebooks/plot_embedding.ipynb)
 
 <iframe src="assets/wsb_emb.html" 
         sandbox="allow-same-origin allow-scripts" 
         width="100%" 
-        height="800" 
+        height="660" 
         scrolling="no" 
         seamless="seamless" 
         frameborder="0"> </iframe> 
