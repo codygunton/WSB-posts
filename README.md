@@ -14,7 +14,7 @@ Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/
   - [Embedding and clustering here](./WSB_clustering.ipynb)
   - [Plotting and additional topic modelling here](./notebooks/plot_embedding.ipynb)
 
-<iframe src="/assets/wsb_emb.html" 
+<iframe src="assets/wsb_emb.html" 
         sandbox="allow-same-origin allow-scripts" 
         width="100%" 
         height="500" 
