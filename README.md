@@ -14,4 +14,5 @@ Analysis of Wall Street Bets posts (dataset here: https://www.kaggle.com/gpreda/
   - [Embedding and clustering here](./WSB_clustering.ipynb)
   - [Plotting and additional topic modelling here](./notebooks/plot_embedding.ipynb)
 
-A page with an interactive plot can be found [here](https://codygunton.github.io/WSB-posts/).
+Click the following plot to acces an interactive version:
+[![USE_clusters](assets/USE_clusters.png)](https://codygunton.github.io/WSB-posts/)
